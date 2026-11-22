@@ -1,0 +1,26 @@
+$ErrorActionPreference = 'Stop'
+$ProjectDir = $PSScriptRoot
+$OllamaExe = (Get-Command ollama.exe -ErrorAction SilentlyContinue).Source
+$Portable = Join-Path $ProjectDir '..\..\ollama-runtime\ollama.exe'
+if (-not $OllamaExe -and (Test-Path -LiteralPath $Portable)) {
+    $OllamaExe = (Resolve-Path -LiteralPath $Portable).Path
+    $env:OLLAMA_MODELS = [IO.Path]::GetFullPath((Join-Path $ProjectDir '..\..\ollama-models'))
+}
+if (-not $OllamaExe) { throw 'Install Ollama for Windows from https://ollama.com/download/windows, then rerun setup_local_ai.bat. No API key is required.' }
+$env:OLLAMA_HOST='127.0.0.1:11434'
+$env:OLLAMA_NO_CLOUD='1'
+$env:OLLAMA_NUM_PARALLEL='1'
+$env:OLLAMA_MAX_LOADED_MODELS='1'
+try { $null=Invoke-RestMethod 'http://127.0.0.1:11434/api/tags' -TimeoutSec 2 }
+catch {
+    $LogDir=Join-Path $ProjectDir 'work';New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+    Start-Process -FilePath $OllamaExe -ArgumentList 'serve' -WindowStyle Hidden -RedirectStandardOutput (Join-Path $LogDir 'ollama.stdout.log') -RedirectStandardError (Join-Path $LogDir 'ollama.stderr.log') | Out-Null
+    $Ready=$false
+    for ($Attempt=0;$Attempt -lt 20;$Attempt++) {
+        Start-Sleep -Milliseconds 500
+        try {$null=Invoke-RestMethod 'http://127.0.0.1:11434/api/tags' -TimeoutSec 2;$Ready=$true;break} catch {}
+    }
+    if (-not $Ready) {throw 'Ollama did not start. Check work/ollama.stderr.log or run ollama serve manually.'}
+}
+if ($MyInvocation.InvocationName -eq '.') {return}
+Write-Host 'Local Ollama server is reachable.'
